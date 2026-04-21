@@ -42,8 +42,8 @@
     <!-- Config + env -->
     <PackageReference Include="DotNetEnv" Version="3.1.1" />
 
-    <!-- MySQL (same versions as WhipBridge) -->
-    <PackageReference Include="MySql.Data" Version="9.4.0" />
+    <!-- No MySQL dependency: WhipAI is stateless. Callers that want to
+         persist responses do it themselves via their own SPs. -->
 
     <!-- Rate limiting (same pattern as WhipBridge) -->
     <PackageReference Include="AspNetCoreRateLimit" Version="5.0.0" />

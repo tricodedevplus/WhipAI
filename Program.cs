@@ -67,10 +67,9 @@ builder.Services.AddSwaggerGen(c =>
 
 // --- WhipAI-specific services ---
 // AnthropicService owns the Claude client (singleton — reuses HttpClient).
-// MySqlService / InvocationLogger reuse the same ExecuteMySQL style as WhipBridge.
+// WhipAI is stateless: callers persist responses themselves (via their own
+// SPs), so no MySQL dependency lives here.
 builder.Services.AddSingleton<AnthropicService>();
-builder.Services.AddSingleton<MySqlService>();
-builder.Services.AddSingleton<InvocationLogger>();
 
 // --- Skill registry ---
 // Each skill is registered as a singleton so its system prompt is loaded once

@@ -5,13 +5,13 @@ namespace WhipAI.Skills;
 
 /// <summary>
 /// Shared plumbing for every skill: loads the system prompt from disk at
-/// construction time (so it's cached in memory and served consistently),
-/// logs every invocation to <c>ai_invocations</c>, and exposes helpers for
-/// subclasses to call Anthropic cleanly.
+/// construction time and exposes helpers for subclasses to call Anthropic
+/// cleanly. WhipAI is stateless — any persistence of the response
+/// (caching, audit) happens on the caller side (WhipBridge) via SPs.
 ///
 /// Subclasses override <see cref="RunAsync"/> with their own
-/// input-parsing + output-shaping logic. They DON'T need to touch logging
-/// or prompt loading — <see cref="InvokeAsync"/> handles both.
+/// input-parsing + output-shaping logic. They DON'T need to touch prompt
+/// loading — <see cref="InvokeAsync"/> handles it.
 /// </summary>
 public abstract class BaseSkill : ISkill
 {
@@ -20,7 +20,6 @@ public abstract class BaseSkill : ISkill
     public abstract string Description { get; }
 
     protected readonly AnthropicService Anthropic;
-    protected readonly InvocationLogger Logger;
     protected readonly ILogger BaseLogger;
 
     /// <summary>
@@ -30,10 +29,9 @@ public abstract class BaseSkill : ISkill
     /// </summary>
     protected string SystemPrompt { get; }
 
-    protected BaseSkill(AnthropicService anthropic, InvocationLogger logger, ILogger baseLogger)
+    protected BaseSkill(AnthropicService anthropic, ILogger baseLogger)
     {
         Anthropic = anthropic;
-        Logger = logger;
         BaseLogger = baseLogger;
         SystemPrompt = LoadPromptFromDisk();
     }
@@ -108,9 +106,10 @@ public abstract class BaseSkill : ISkill
     }
 
     /// <summary>
-    /// Controller-facing entrypoint. Handles preconditions (prompt loaded,
-    /// Anthropic configured), delegates to <see cref="RunAsync"/> for the
-    /// skill-specific logic, and logs the invocation regardless of outcome.
+    /// Controller-facing entrypoint. Handles preconditions (prompt loaded),
+    /// delegates to <see cref="RunAsync"/> for the skill-specific logic,
+    /// and stamps the skill identity onto the response meta. WhipAI is
+    /// stateless — callers (WhipBridge) own persistence.
     /// </summary>
     public async Task<SkillResponse> InvokeAsync(
         SkillRequest request,
@@ -122,7 +121,6 @@ public abstract class BaseSkill : ISkill
         {
             var err = $"Skill '{Name}' has no system prompt on disk at Skills/Prompts/{Name}.{Version}.md.";
             BaseLogger.LogError(err);
-            Logger.Log(Name, Version, auditUser, null, ok: false, error: err, tokenEnvironment);
             return SkillResponse.Failure(err);
         }
 
@@ -131,25 +129,18 @@ public abstract class BaseSkill : ISkill
             var result = await RunAsync(request, auditUser, ct);
             // Stamp the skill identity onto the meta so callers see
             // "skill: argyle-driver-review, version: v1" in every response.
-            // The AnthropicService doesn't know about skills — only this
-            // layer does — so this is the natural place to fill them in.
+            // AnthropicService doesn't know about skills — only this layer
+            // does — so this is the natural place to fill them in.
             if (result.Meta is not null)
             {
                 result.Meta.Skill = Name;
                 result.Meta.Version = Version;
             }
-            Logger.Log(
-                Name, Version, auditUser,
-                result.Meta,
-                ok: result.Ok,
-                error: result.Error,
-                tokenEnvironment);
             return result;
         }
         catch (Exception ex)
         {
             BaseLogger.LogError(ex, "Skill '{Skill}' threw unhandled exception", Name);
-            Logger.Log(Name, Version, auditUser, null, ok: false, error: ex.Message, tokenEnvironment);
             return SkillResponse.Failure(ex.Message);
         }
     }

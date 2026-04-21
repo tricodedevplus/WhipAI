@@ -33,9 +33,8 @@ public sealed class ArgyleDriverReviewSkill : BaseSkill
 
     public ArgyleDriverReviewSkill(
         AnthropicService anthropic,
-        InvocationLogger logger,
         ILogger<ArgyleDriverReviewSkill> log)
-        : base(anthropic, logger, log) { }
+        : base(anthropic, log) { }
 
     protected override async Task<SkillResponse> RunAsync(
         SkillRequest request,

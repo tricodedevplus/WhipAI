@@ -12,8 +12,8 @@ available for a given applicant).
 
 **Stack:** .NET 8, raw HttpClient against Anthropic's REST API (no SDK —
 same pattern as WhipBridge's other integrations), shared-secret
-`x-api-key` auth between WhipBridge and WhipAI, MySQL (reuses
-`fleet_migration` for invocation logging).
+`x-api-key` auth between WhipBridge and WhipAI. **Stateless — no database.**
+Callers (WhipBridge) own persistence via their own stored procedures.
 
 **Pattern:** `POST /api/ai/skill/{name}/invoke` with `{ input, options? }`
 → dispatches to the named skill → skill calls Claude with a cached system
@@ -38,15 +38,13 @@ Each skill is a self-contained class under `Skills/` with three things:
 
 To add a new skill: subclass `BaseSkill`, drop the prompt file under
 `Skills/Prompts/`, register the class in `Program.cs`. That's it — the
-controller and logging pipeline pick it up automatically.
+controller picks it up automatically.
 
 ### Services
 
 | File | Responsibility |
 |------|----------------|
-| `Services/AnthropicService.cs` | Wraps the Anthropic SDK. Handles prompt caching, effort, adaptive thinking, cost estimation, and error → envelope conversion. |
-| `Services/MySqlService.cs` | Opens a MySQL connection using `CNDW_QA` (default) or `CNDW` (when `token_environment: dev` header is sent). Same switch WhipBridge uses. |
-| `Services/InvocationLogger.cs` | Fire-and-forget writer to `ai_invocations`. Never throws — DB issues are logged and swallowed so a BD hiccup never blocks a user-facing response. |
+| `Services/AnthropicService.cs` | Wraps Anthropic's REST API via HttpClient. Handles prompt caching, effort, adaptive thinking, cost estimation, and error → envelope conversion. |
 | `Helpers/PiiRedactor.cs` | Strips SSN/DOB/bank fields from skill input before it leaves our process. Field-name denylist; not regex-on-value (too aggressive). |
 
 ### Models
@@ -75,7 +73,6 @@ controller and logging pipeline pick it up automatically.
 | `ANTHROPIC_API_KEY` | **Yes** | Without it, server starts but every invoke returns 503 |
 | `WHIPAI_API_KEY` | **Yes** | Shared secret — WhipBridge sends it as `x-api-key` on every call. Must match the value in WhipBridge's env |
 | `DEFAULT_MODEL` | No | Override the default Claude model (defaults to `claude-opus-4-7`) |
-| `CNDW` / `CNDW_QA` | Yes | MySQL connection strings (same as WhipBridge) |
 | `AI_FAIL_OPEN` | No | `true` (default) = return 503 on Anthropic errors; `false` = retry aggressively |
 | `LOG_LEVEL` | No | Trace/Debug/Information/Warning/Error/Critical |
 | `PORT` | Prod only | HTTP port in prod (defaults to 8081; dev uses launchSettings.json) |
@@ -111,10 +108,12 @@ because the `x-api-key` already proved the caller is WhipBridge.
 
 ## First-time setup
 
-1. `cp .env.example .env` and populate `ANTHROPIC_API_KEY`, JWT secrets, MySQL connections.
-2. Run `sql/ai_invocations.sql` against `fleet_migration` (once, per env).
-3. Replace `Skills/Prompts/render-argyle.v1.md` with the production system prompt (the committed file is a placeholder).
-4. `dotnet run` — local server on `http://localhost:8081`, Swagger at `/swagger`.
+1. `cp .env.example .env` and populate `ANTHROPIC_API_KEY` + `WHIPAI_API_KEY`.
+2. Drop the production `.skill` bundle (or `.md` prompt) into `Skills/Prompts/` — see the `argyle-driver-review` skill for an example.
+3. `dotnet run` — local server on `http://localhost:8081`, Swagger at `/swagger`.
+
+No database setup. WhipAI is stateless — responses are always computed
+from scratch and returned to the caller.
 
 ---
 
@@ -138,36 +137,17 @@ because the `x-api-key` already proved the caller is WhipBridge.
 
 ## Cost tracking
 
-Every invocation writes a row to `ai_invocations` with input/output tokens,
-cache hit stats, estimated cost in USD, and latency. Cost is estimated
-client-side from the public price table (updated 2026-04-15 in
-`AnthropicService.EstimateCostUsd`); when Anthropic changes prices, update
-that method.
+WhipAI itself doesn't persist anything — each response includes a `meta`
+block with `inputTokens`, `outputTokens`, `cacheReadTokens`, `costUsd`,
+and `latencyMs`. Callers that want a per-invocation audit log should
+save that envelope themselves via their own SPs (WhipBridge already
+caches `argyle-driver-review` results into `crm_applicant_ai_reports`
+via SP `crm_applicant_ai_report_save` — that table can be queried for
+cost + model + token stats).
 
-Handy queries:
-
-```sql
--- Daily cost by skill
-SELECT DATE(created_at) AS day, skill, SUM(cost_usd), COUNT(*)
-FROM ai_invocations
-WHERE created_at >= DATE_SUB(UTC_DATE(), INTERVAL 30 DAY)
-GROUP BY day, skill
-ORDER BY day DESC, skill;
-
--- Cache hit rate per skill (higher is better — means prompt caching is working)
-SELECT skill,
-       SUM(cache_read_tokens) /
-       NULLIF(SUM(input_tokens + cache_read_tokens), 0) AS cache_hit_rate
-FROM ai_invocations
-WHERE created_at >= DATE_SUB(UTC_DATE(), INTERVAL 7 DAY)
-GROUP BY skill;
-
--- Recent failures
-SELECT created_at, skill, audit_user, error_message
-FROM ai_invocations
-WHERE ok = 0 AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR)
-ORDER BY created_at DESC;
-```
+Cost is estimated client-side in `AnthropicService.EstimateCostUsd`
+from the public price table (updated 2026-04-15). When Anthropic
+changes prices, update that method.
 
 ---
 

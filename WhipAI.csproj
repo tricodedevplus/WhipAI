@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>WhipAI</RootNamespace>
+    <AssemblyName>WhipAI</AssemblyName>
+    <!-- Allow the app to run on .NET 10 runtimes (dev boxes upgrade before
+         the rest of the ecosystem catches up). Targets 8.0 for source
+         compat with WhipBridge; runs on whatever major is installed. -->
+    <RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Ship skill system prompts as static assets next to the compiled
+         binary so BaseSkill.LoadPromptFromDisk() can find them in prod.
+         Supports both packaged .skill bundles (ZIP with SKILL.md inside)
+         and bare .md files for dev / inline authoring. -->
+    <Content Include="Skills\Prompts\**\*.skill">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Skills\Prompts\**\*.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- No Anthropic SDK — we call the REST API directly via HttpClient.
+         The "Anthropic" NuGet package is a community-maintained SDK
+         (tryAGI/Anthropic) and the official C# SDK isn't on NuGet yet.
+         Raw HTTP gives us deterministic control over cache_control, retries,
+         and response shape — the same pattern WhipBridge uses for every
+         other third-party integration (Onfido, Tesla, Argyle). -->
+
+    <!-- Auth + web -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+
+    <!-- Config + env -->
+    <PackageReference Include="DotNetEnv" Version="3.1.1" />
+
+    <!-- MySQL (same versions as WhipBridge) -->
+    <PackageReference Include="MySql.Data" Version="9.4.0" />
+
+    <!-- Rate limiting (same pattern as WhipBridge) -->
+    <PackageReference Include="AspNetCoreRateLimit" Version="5.0.0" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,39 @@
+bin/
+obj/
+out/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# VS / IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+
+# Logs
+*.log
+logs/
+
+# Test artifacts — real applicant payloads / cached responses.
+# The payload files themselves contain PII (names, addresses, emails),
+# and responses cache Claude's analysis. Never commit.
+test/last-response.*
+test/sample-*.json

@@ -76,10 +76,12 @@ builder.Services.AddSingleton<AnthropicService>();
 // from disk (allowing live edits between deploys without rebuilding the project).
 // Add new skills here as the catalog grows.
 builder.Services.AddSingleton<ArgyleDriverReviewSkill>();
+builder.Services.AddSingleton<CheckrBackgroundReviewSkill>();
 builder.Services.AddSingleton<SkillRegistry>(sp =>
     new SkillRegistry(new ISkill[]
     {
         sp.GetRequiredService<ArgyleDriverReviewSkill>(),
+        sp.GetRequiredService<CheckrBackgroundReviewSkill>(),
     })
 );
 
